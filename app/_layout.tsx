@@ -25,7 +25,7 @@ function RouteGuard({ children }: { children: React.ReactNode; }) {
 export default function RootLayout() {
 	return (
 		<AuthProvider>
-			<PaperProvider>
+			{/* <PaperProvider> */}
 				<SafeAreaProvider>
 					<RouteGuard>
 						<Stack>
@@ -33,7 +33,7 @@ export default function RootLayout() {
 						</Stack>
 					</RouteGuard>
 				</SafeAreaProvider>
-			</PaperProvider>
+			{/* </PaperProvider> */}
 		</AuthProvider>
 	);
 }
