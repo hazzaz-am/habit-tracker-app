@@ -1,6 +1,6 @@
 import { Client, Account, TablesDB } from "react-native-appwrite";
 
-let client: Client;
+export let client: Client;
 export let account: Account;
 export let tablesDB: TablesDB;
 
