@@ -2,9 +2,10 @@ import { useAuth } from "@/hooks/auth-context";
 import { client, DATABASE_ID, HABITS_TABLE_ID, tablesDB } from "@/lib/appwrite";
 import { IHabit } from "@/types/habits";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Query, RealtimeResponseEvent } from "react-native-appwrite";
+import { Swipeable } from "react-native-gesture-handler";
 import { ActivityIndicator, Button, Surface, Text, useTheme } from "react-native-paper";
 
 export default function Index() {
@@ -13,6 +14,8 @@ export default function Index() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const theme = useTheme();
+
+	const swipeableRefs = useRef<{ [key: string]: Swipeable | null; }>({});
 
 	const fetchHabits = useCallback(async () => {
 		try {
@@ -122,22 +125,31 @@ export default function Index() {
 				{
 					habits.length > 0 ? (
 						habits.map((habit) => (
-							<Surface key={habit.$id} style={style.card} elevation={0}>
+							<Swipeable
+								key={habit.$id}
+								ref={(ref) => {
+									swipeableRefs.current[habit.$id] = ref;
+								}}
+								overshootLeft={false}
+								overshootRight={false}
+							>
+								<Surface style={style.card} elevation={0}>
 
-								<View style={style.cardContent}>
-									<Text style={style.cardTitle}>{habit.title}</Text>
-									<Text style={style.cardDescription}>{habit.description}</Text>
-									<View style={style.cardFooter}>
-										<View style={style.streakContainer}>
-											<MaterialCommunityIcons size={20} name="fire" color={"coral"} />
-											<Text style={style.streakCount}>{habit.streak_count} day streak</Text>
-										</View>
-										<View style={style.frequencyContainer}>
-											<Text style={style.frequencyText}>{habit.frequency.charAt(0).toUpperCase() + habit.frequency.slice(1)}</Text>
+									<View style={style.cardContent}>
+										<Text style={style.cardTitle}>{habit.title}</Text>
+										<Text style={style.cardDescription}>{habit.description}</Text>
+										<View style={style.cardFooter}>
+											<View style={style.streakContainer}>
+												<MaterialCommunityIcons size={20} name="fire" color={"coral"} />
+												<Text style={style.streakCount}>{habit.streak_count} day streak</Text>
+											</View>
+											<View style={style.frequencyContainer}>
+												<Text style={style.frequencyText}>{habit.frequency.charAt(0).toUpperCase() + habit.frequency.slice(1)}</Text>
+											</View>
 										</View>
 									</View>
-								</View>
-							</Surface>
+								</Surface>
+							</Swipeable>
 						))
 					) : (
 						<View style={style.emptyContainer}>
