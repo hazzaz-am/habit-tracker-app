@@ -3,7 +3,7 @@ import { client, DATABASE_ID, HABITS_TABLE_ID, tablesDB } from "@/lib/appwrite";
 import { IHabit } from "@/types/habits";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import { Query, RealtimeResponseEvent } from "react-native-appwrite";
 import { Swipeable } from "react-native-gesture-handler";
 import { ActivityIndicator, Button, Surface, Text, useTheme } from "react-native-paper";
@@ -43,6 +43,32 @@ export default function Index() {
 
 	const handleSignOut = async () => {
 		await signOut();
+	};
+
+	const renderLeftActions = () => (
+		<View style={style.swipeLeftAction}>
+			<MaterialCommunityIcons name="trash-can-outline" size={32} color={"#fff"} />
+		</View>
+	);
+
+	const renderRightActions = () => (
+		<View style={style.swipeRightAction}>
+			<MaterialCommunityIcons name="check-circle-outline" size={32} color={"#fff"} />
+		</View>
+	);
+
+	const handleDeleteHabitById = async (id: string) => {
+		try {
+			await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: HABITS_TABLE_ID, rowId: id });
+		} catch (error) {
+			if (error instanceof Error) {
+				Alert.alert("Error", error.message);
+				return;
+			} else {
+				Alert.alert("Error", "Something went wrong while deleting the habit.");
+				return;
+			}
+		}
 	};
 
 	useEffect(() => {
@@ -104,13 +130,13 @@ export default function Index() {
 		};
 	}, [fetchHabits, user]);
 
-	if (loading) {
-		return (
-			<View style={style.loadingContainer}>
-				<ActivityIndicator size={"large"} animating={true} color={"#6200ee"} />
-			</View>
-		);
-	}
+	// if (loading) {
+	// 	return (
+	// 		<View style={style.loadingContainer}>
+	// 			<ActivityIndicator size={"large"} animating={true} color={"#6200ee"} />
+	// 		</View>
+	// 	);
+	// }
 
 	return (
 		<View
@@ -132,6 +158,14 @@ export default function Index() {
 								}}
 								overshootLeft={false}
 								overshootRight={false}
+								renderLeftActions={renderLeftActions}
+								renderRightActions={renderRightActions}
+								onSwipeableOpen={(direction) => {
+									if (direction === "left") {
+										handleDeleteHabitById(habit.$id);
+									}
+									swipeableRefs.current[habit.$id]?.close();
+								}}
 							>
 								<Surface style={style.card} elevation={0}>
 
@@ -249,6 +283,26 @@ const style = StyleSheet.create({
 	},
 	emptyText: {
 		color: "#666666"
+	},
+	swipeLeftAction: {
+		justifyContent: "center",
+		alignItems: "flex-start",
+		flex: 1,
+		backgroundColor: "#e53935",
+		borderRadius: 18,
+		marginBottom: 18,
+		marginTop: 2,
+		paddingLeft: 16
+	},
+	swipeRightAction: {
+		justifyContent: "center",
+		alignItems: "flex-end",
+		backgroundColor: "#4caf50",
+		flex: 1,
+		borderRadius: 18,
+		marginBottom: 18,
+		marginTop: 2,
+		paddingRight: 16
 	}
 
 });
