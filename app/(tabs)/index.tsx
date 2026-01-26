@@ -1,17 +1,16 @@
 import { useAuth } from "@/hooks/auth-context";
-import { client, DATABASE_ID, HABITS_TABLE_ID, tablesDB } from "@/lib/appwrite";
+import { client, DATABASE_ID, HABITS_COMPLETIONS_TABLE_ID, HABITS_TABLE_ID, tablesDB } from "@/lib/appwrite";
 import { IHabit } from "@/types/habits";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, View } from "react-native";
-import { Query, RealtimeResponseEvent } from "react-native-appwrite";
+import { ID, Query, RealtimeResponseEvent } from "react-native-appwrite";
 import { Swipeable } from "react-native-gesture-handler";
 import { ActivityIndicator, Button, Surface, Text, useTheme } from "react-native-paper";
 
 export default function Index() {
-	const { signOut, user } = useAuth();
+	const { signOut, user, isUserLoading } = useAuth();
 	const [habits, setHabits] = useState<IHabit[]>([]);
-	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const theme = useTheme();
 
@@ -20,7 +19,6 @@ export default function Index() {
 	const fetchHabits = useCallback(async () => {
 		try {
 			if (!user) return;
-			setLoading(true);
 			setError(null);
 			const habitLists = await tablesDB.listRows<IHabit>({
 				databaseId: DATABASE_ID,
@@ -36,8 +34,6 @@ export default function Index() {
 				return;
 			}
 			setError("Something went wrong while fetching habits.");
-		} finally {
-			setLoading(false);
 		}
 	}, [user]);
 
@@ -68,6 +64,40 @@ export default function Index() {
 				Alert.alert("Error", "Something went wrong while deleting the habit.");
 				return;
 			}
+		}
+	};
+
+	const handleHabitCompletion = async (id: string) => {
+		try {
+			const habit = habits.find((habit) => habit.$id === id);
+			if (!habit) return;
+			if (!user) return;
+			const newStreakCount = habit.streak_count + 1;
+			const currentDate = new Date().toISOString();
+
+			await tablesDB.createRow({
+				databaseId: DATABASE_ID,
+				tableId: HABITS_COMPLETIONS_TABLE_ID,
+				rowId: ID.unique(),
+				data: {
+					habit_id: id,
+					user_id: user.$id,
+					completed_at: currentDate,
+				}
+			});
+
+			await tablesDB.updateRow({
+				databaseId: DATABASE_ID,
+				tableId: HABITS_TABLE_ID,
+				rowId: id,
+				data: {
+					streak_count: newStreakCount,
+					last_completed: currentDate,
+				}
+			});
+
+		} catch (error) {
+			console.error(error);
 		}
 	};
 
@@ -130,13 +160,13 @@ export default function Index() {
 		};
 	}, [fetchHabits, user]);
 
-	// if (loading) {
-	// 	return (
-	// 		<View style={style.loadingContainer}>
-	// 			<ActivityIndicator size={"large"} animating={true} color={"#6200ee"} />
-	// 		</View>
-	// 	);
-	// }
+	if (isUserLoading) {
+		return (
+			<View style={style.loadingContainer}>
+				<ActivityIndicator size={"large"} animating={true} color={"#6200ee"} />
+			</View>
+		);
+	}
 
 	return (
 		<View
@@ -163,6 +193,8 @@ export default function Index() {
 								onSwipeableOpen={(direction) => {
 									if (direction === "left") {
 										handleDeleteHabitById(habit.$id);
+									} else if (direction === "right") {
+										handleHabitCompletion(habit.$id);
 									}
 									swipeableRefs.current[habit.$id]?.close();
 								}}
