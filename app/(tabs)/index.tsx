@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/auth-context";
 import { client, DATABASE_ID, HABITS_COMPLETIONS_TABLE_ID, HABITS_TABLE_ID, tablesDB } from "@/lib/appwrite";
-import { IHabit } from "@/types/habits";
+import { IHabit, IHabitCompletion } from "@/types/habits";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, View } from "react-native";
@@ -11,6 +11,7 @@ import { ActivityIndicator, Button, Surface, Text, useTheme } from "react-native
 export default function Index() {
 	const { signOut, user, isUserLoading } = useAuth();
 	const [habits, setHabits] = useState<IHabit[]>([]);
+	const [completions, setCompletions] = useState<string[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	const theme = useTheme();
 
@@ -37,6 +38,27 @@ export default function Index() {
 		}
 	}, [user]);
 
+	const fetchTodayCompletions = useCallback(async () => {
+
+		try {
+			const today = new Date();
+			today.setHours(0, 0, 0, 0);
+			const response = await tablesDB.listRows<IHabitCompletion>({
+				databaseId: DATABASE_ID,
+				tableId: HABITS_COMPLETIONS_TABLE_ID,
+				queries: [
+					Query.equal("user_id", user?.$id ?? ""),
+					Query.greaterThanEqual("completed_at", today.toISOString())
+				]
+			});
+			const completions = response.rows.map((completion) => completion.habit_id);
+			setCompletions(completions);
+		} catch (error) {
+			console.error(error);
+		}
+
+	}, [user]);
+
 	const handleSignOut = async () => {
 		await signOut();
 	};
@@ -47,15 +69,28 @@ export default function Index() {
 		</View>
 	);
 
-	const renderRightActions = () => (
+	const renderRightActions = (habitId: string) => (
 		<View style={style.swipeRightAction}>
-			<MaterialCommunityIcons name="check-circle-outline" size={32} color={"#fff"} />
+			{
+				isHabitCompleted(habitId) ? (
+					<Text style={{
+						color: "#fff",
+						fontSize: 16,
+						fontWeight: "bold",
+					}}>Completed</Text>
+				) : (
+					<MaterialCommunityIcons name="check-circle-outline" size={32} color={"#fff"} />
+				)
+			}
 		</View>
 	);
 
 	const handleDeleteHabitById = async (id: string) => {
 		try {
 			await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: HABITS_TABLE_ID, rowId: id });
+			if (completions.includes(id)) {
+				await tablesDB.deleteRow({ databaseId: DATABASE_ID, tableId: HABITS_COMPLETIONS_TABLE_ID, rowId: id });
+			}
 		} catch (error) {
 			if (error instanceof Error) {
 				Alert.alert("Error", error.message);
@@ -68,6 +103,7 @@ export default function Index() {
 	};
 
 	const handleHabitCompletion = async (id: string) => {
+		if (completions.includes(id)) return;
 		try {
 			const habit = habits.find((habit) => habit.$id === id);
 			if (!habit) return;
@@ -100,6 +136,7 @@ export default function Index() {
 			console.error(error);
 		}
 	};
+
 
 	useEffect(() => {
 		if (!user) return;
@@ -153,12 +190,47 @@ export default function Index() {
 			}
 		});
 
+		const completionsChannel = `databases.${DATABASE_ID}.tables.${HABITS_COMPLETIONS_TABLE_ID}.rows`;
+
+		const unsubscribeCompletions = client.subscribe(completionsChannel, (response: RealtimeResponseEvent<IHabitCompletion>) => {
+			const { events, payload } = response;
+
+			if (!payload) return;
+
+			// Filter events to only handle rows that belong to the current user
+			if ('user_id' in payload && payload.user_id !== user.$id) {
+				return;
+			}
+
+			// Check if any of the events match create, update, or delete
+			// Events can be an array or a single string, so we normalize it
+			const eventArray = Array.isArray(events) ? events : [events];
+
+			// Check for create, update, or delete in any format
+			const isCreate = eventArray.some(e =>
+				String(e).includes('create') ||
+				String(e).includes('rows.create') ||
+				String(e) === 'create'
+			);
+
+			// Handle create event
+			if (isCreate) {
+				fetchTodayCompletions();
+			}
+		});
+
 		fetchHabits();
+		fetchTodayCompletions();
 		// Cleanup subscription on unmount
 		return () => {
 			unsubscribe();
+			unsubscribeCompletions();
 		};
-	}, [fetchHabits, user]);
+	}, [fetchHabits, fetchTodayCompletions, user]);
+
+	const isHabitCompleted = (id: string) => {
+		return completions.includes(id);
+	};
 
 	if (isUserLoading) {
 		return (
@@ -189,7 +261,7 @@ export default function Index() {
 								overshootLeft={false}
 								overshootRight={false}
 								renderLeftActions={renderLeftActions}
-								renderRightActions={renderRightActions}
+								renderRightActions={() => renderRightActions(habit.$id)}
 								onSwipeableOpen={(direction) => {
 									if (direction === "left") {
 										handleDeleteHabitById(habit.$id);
@@ -199,7 +271,7 @@ export default function Index() {
 									swipeableRefs.current[habit.$id]?.close();
 								}}
 							>
-								<Surface style={style.card} elevation={0}>
+								<Surface style={[style.card, isHabitCompleted(habit.$id) ? style.completedCard : {}]} elevation={0}>
 
 									<View style={style.cardContent}>
 										<Text style={style.cardTitle}>{habit.title}</Text>
@@ -263,6 +335,9 @@ const style = StyleSheet.create({
 		shadowRadius: 8,
 		elevation: 4,
 		width: "100%",
+	},
+	completedCard: {
+		opacity: 0.6,
 	},
 	cardContent: {
 		padding: 20,
