@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/auth-context";
 import {
+	client,
 	DATABASE_ID,
 	HABITS_COMPLETIONS_TABLE_ID,
 	HABITS_TABLE_ID,
@@ -8,7 +9,7 @@ import {
 import { IHabit, IHabitCompletion } from "@/types/habits";
 import React, { useCallback, useEffect, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
-import { Query } from "react-native-appwrite";
+import { Query, RealtimeResponseEvent } from "react-native-appwrite";
 import { Card, Text } from "react-native-paper";
 
 interface IStreakData {
@@ -21,12 +22,10 @@ export default function StreaksScreen() {
 	const { user } = useAuth();
 	const [habits, setHabits] = useState<IHabit[]>([]);
 	const [completions, setCompletions] = useState<IHabitCompletion[]>([]);
-	const [error, setError] = useState<string | null>(null);
 
 	const fetchHabits = useCallback(async () => {
 		try {
 			if (!user) return;
-			setError(null);
 			const habitLists = await tablesDB.listRows<IHabit>({
 				databaseId: DATABASE_ID,
 				tableId: HABITS_TABLE_ID,
@@ -35,10 +34,8 @@ export default function StreaksScreen() {
 			setHabits(habitLists.rows);
 		} catch (error) {
 			if (error instanceof Error) {
-				setError(error.message);
 				return;
 			}
-			setError("Something went wrong while fetching habits.");
 		}
 	}, [user]);
 
@@ -58,8 +55,93 @@ export default function StreaksScreen() {
 	useEffect(() => {
 		if (!user) return;
 
+
+		const channel = `databases.${DATABASE_ID}.tables.${HABITS_TABLE_ID}.rows`;
+
+		const unsubscribe = client.subscribe(channel, (response: RealtimeResponseEvent<IHabit>) => {
+			const { events, payload } = response;
+
+			if (!payload) return;
+
+			// Filter events to only handle rows that belong to the current user
+			if ('user_id' in payload && payload.user_id !== user.$id) {
+				return;
+			}
+
+			// Check if any of the events match create, update, or delete
+			// Events can be an array or a single string, so we normalize it
+			const eventArray = Array.isArray(events) ? events : [events];
+
+			// Check for create, update, or delete in any format
+			const isCreate = eventArray.some(e =>
+				String(e).includes('create') ||
+				String(e).includes('rows.create') ||
+				String(e) === 'create'
+			);
+			const isUpdate = eventArray.some(e =>
+				String(e).includes('update') ||
+				String(e).includes('rows.update') ||
+				String(e) === 'update'
+			);
+			const isDelete = eventArray.some(e =>
+				String(e).includes('delete') ||
+				String(e).includes('rows.delete') ||
+				String(e) === 'delete'
+			);
+
+			// Handle create event
+			if (isCreate) {
+				fetchHabits();
+			}
+
+			// Handle update event
+			if (isUpdate) {
+				fetchHabits();
+			}
+
+			// Handle delete event
+			if (isDelete) {
+				fetchHabits();
+			}
+		});
+
+		const completionsChannel = `databases.${DATABASE_ID}.tables.${HABITS_COMPLETIONS_TABLE_ID}.rows`;
+
+		const unsubscribeCompletions = client.subscribe(completionsChannel, (response: RealtimeResponseEvent<IHabitCompletion>) => {
+			const { events, payload } = response;
+
+			if (!payload) return;
+
+			// Filter events to only handle rows that belong to the current user
+			if ('user_id' in payload && payload.user_id !== user.$id) {
+				return;
+			}
+
+			// Check if any of the events match create, update, or delete
+			// Events can be an array or a single string, so we normalize it
+			const eventArray = Array.isArray(events) ? events : [events];
+
+			// Check for create, update, or delete in any format
+			const isCreate = eventArray.some(e =>
+				String(e).includes('create') ||
+				String(e).includes('rows.create') ||
+				String(e) === 'create'
+			);
+
+			// Handle create event
+			if (isCreate) {
+				fetchCompletions();
+			}
+		});
+
 		fetchHabits();
 		fetchCompletions();
+
+		// Cleanup subscription on unmount
+		return () => {
+			unsubscribe();
+			unsubscribeCompletions();
+		};
 	}, [fetchHabits, fetchCompletions, user]);
 
 	const getStreakData = (habitId: string): IStreakData => {
